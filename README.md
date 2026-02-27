@@ -1,164 +1,229 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WordPress Headless with Next.js 15
 
-## Getting Started
+A modern headless WordPress application built with Next.js 15, WPGraphQL, and optimized for Pantheon hosting.
 
-First, run the development server:
+## Features
+
+- **Next.js 15** with App Router and React Server Components
+- **Incremental Static Regeneration (ISR)** with shared cache via `@pantheon-systems/nextjs-cache-handler`
+- **Tag-Based Cache Invalidation** for efficient content updates
+- **On-Demand Revalidation** via WordPress webhooks
+- **TypeScript** for type safety
+- **Tailwind CSS** for styling
+- **Optimized for Pantheon** hosting platform
+
+## Architecture
+
+### Next.js Application
+
+```
+/app
+  /api/revalidate     - On-demand revalidation endpoint
+  /blog               - Blog listing and individual posts
+  /[...slug]          - Catch-all for WordPress pages
+
+/components
+  /wordpress          - WordPress-specific components
+
+/lib/wordpress
+  /client.ts          - GraphQL client with tag support
+  /queries.ts         - WordPress data queries
+  /types.ts           - TypeScript types
+  /fragments.ts       - Reusable GraphQL fragments
+```
+
+## Prerequisites
+
+- Node.js 20+ (specified in `package.json` engines field)
+- WordPress backend with WPGraphQL installed
+- Pantheon account for deployment
+
+## Local Development Setup
+
+### 1. Clone and Install
+
+```bash
+# Install dependencies
+npm install
+
+# Copy environment variables
+cp .env.local.example .env.local
+```
+
+### 2. Configure Environment Variables
+
+Edit `.env.local`:
+
+```bash
+WORDPRESS_API_URL=https://your-wp-site.pantheonsite.io/graphql
+WORDPRESS_REVALIDATE_SECRET=your-secure-random-string
+```
+
+### 3. Start Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## WordPress Backend Setup
 
-## Learn More
+See [WORDPRESS_REQUIREMENTS.md](./WORDPRESS_REQUIREMENTS.md) for complete WordPress configuration instructions.
 
-To learn more about Next.js, take a look at the following resources:
+### Required WordPress Plugins
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **WPGraphQL** - Core GraphQL API
+2. **WPGraphQL CORS** - Cross-origin request handling
+3. **WPGraphQL for ACF** - Future ACF support (optional)
+4. **Headless Mode** - Disable WP front-end (recommended)
 
----
+## Pantheon Deployment
 
-## Next.js 16 Specific Features
+### Environment Variables Setup
 
-This template includes Next.js 16 with the following enhancements:
+Use Terminus Secrets Manager to configure environment variables:
 
-### Features
+```bash
+# Install Secrets Manager plugin
+terminus self:plugin:install terminus-secrets-manager-plugin
 
-- Next.js 16.1.6 with Turbopack (default bundler)
-- React 19.2.0
-- TypeScript 5
-- Pantheon cache handler with auto-detection (GCS/file-based)
-- Minimal and unopinionated (no styling framework)
-- App Router architecture
+# Set site-wide variables
+terminus secret:site:set <site-name> WORDPRESS_REVALIDATE_SECRET "your-secret"
+
+# Set environment-specific WordPress URLs
+terminus secret:env:set <site-name>.dev WORDPRESS_API_URL "https://dev-wp.pantheonsite.io/graphql"
+terminus secret:env:set <site-name>.test WORDPRESS_API_URL "https://test-wp.pantheonsite.io/graphql"
+terminus secret:env:set <site-name>.live WORDPRESS_API_URL "https://live-wp.pantheonsite.io/graphql"
+```
+
+### Automatic Variables
+
+These are automatically set by Pantheon:
+- `CACHE_BUCKET` - GCS bucket for cache storage
+- `OUTBOUND_PROXY_ENDPOINT` - Edge cache proxy
+
+### Build Process
+
+Pantheon automatically:
+1. Detects Node.js version from `package.json` engines field
+2. Runs `npm ci --quiet --no-fund --no-audit`
+3. Runs `npm run build`
+4. Deploys to containers behind Global CDN
+
+**Important:** Ensure only ONE lock file exists (`package-lock.json` recommended)
+
+## Cache Strategy
 
 ### Cache Handler
 
-This template includes `@pantheon-systems/nextjs-cache-handler` pre-configured with auto-detection:
+This project uses `@pantheon-systems/nextjs-cache-handler` which provides:
 
-- **Production (Pantheon):** Uses Google Cloud Storage when `CACHE_BUCKET` environment variable is set
-- **Development (Local):** Uses file-based caching
+- **Dual Cache Support**: GCS in production, file-based locally
+- **Tag-Based Invalidation**: O(1) cache clearing by tag
+- **Build-Aware Caching**: Auto-invalidates on new builds
+- **Buffer Serialization**: Next.js 15 compatibility
 
-#### Configuration
+### Revalidation Times
 
-Next.js 16 introduces a dual cache handler system configured in `next.config.ts`:
+- **Homepage**: 1 hour (3600s)
+- **Blog Listing**: 30 minutes (1800s)
+- **Blog Posts**: 1 hour (3600s)
+- **Pages**: 2 hours (7200s)
 
-```typescript
-const nextConfig: NextConfig = {
-  // Required for Pantheon deployment
-  output: 'standalone',
+### On-Demand Revalidation
 
-  // Transpile the cache handler package
-  transpilePackages: ['@pantheon-systems/nextjs-cache-handler'],
-
-  // Next.js 16 Cache Components
-  cacheComponents: true,
-
-  // Custom cache life profiles for 'use cache' directive
-  cacheLife: {
-    short: { stale: 30, revalidate: 60, expire: 300 },
-    blog: { stale: 60, revalidate: 300, expire: 3600 },
-  },
-
-  // Legacy cache handler (ISR, route handlers, fetch cache)
-  cacheHandler: path.resolve('./cacheHandler.ts'),
-
-  // Next.js 16 cache handlers for 'use cache' directive
-  cacheHandlers: {
-    default: path.resolve('./use-cache-handler.ts'),
-    remote: path.resolve('./use-cache-handler.ts'),
-  },
-
-  // Disable in-memory caching
-  cacheMaxMemorySize: 0,
-};
-```
-
-**Two Cache Handlers:**
-- `cacheHandler.ts`: Legacy handler for ISR, route handlers, and fetch cache
-- `use-cache-handler.ts`: Next.js 16 handler for the new `'use cache'` directive
-
-#### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `CACHE_BUCKET` | GCS bucket name for cache storage | Required for production |
-| `OUTBOUND_PROXY_ENDPOINT` | Edge cache proxy endpoint | Optional |
-| `CACHE_DEBUG` | Enable debug logging (`true` or `1`) | Optional |
-
-#### Example .env
+WordPress can trigger revalidation via webhook:
 
 ```bash
-# Production (Pantheon)
-CACHE_BUCKET=your-gcs-bucket-name
-
-# Optional
-CACHE_DEBUG=true
-OUTBOUND_PROXY_ENDPOINT=https://your-edge-cache-endpoint
+curl -X POST https://your-nextjs-site.com/api/revalidate?secret=YOUR_SECRET \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/blog/my-post", "tag": "posts"}'
 ```
 
-### Migrating from Next.js 15
+## Project Structure
 
-This template supports migration from Next.js 15 to 16:
+### Key Files
 
-#### Turbopack (Default in v16)
+- `cacheHandler.ts` - Cache handler configuration
+- `next.config.ts` - Next.js configuration with cache handler and image optimization
+- `app/layout.tsx` - Root layout with site-wide navigation
+- `lib/wordpress/client.ts` - GraphQL client with tag support
+- `lib/wordpress/queries.ts` - All WordPress data queries
+- `components/wordpress/` - Reusable WordPress components
 
-- **No webpack config:** Works out of the box with Turbopack
-- **Has webpack config:** Remove it or use `npm run build -- --webpack` to keep using Webpack
-- **Already using Turbopack in v15:** Seamless migration, no changes needed
+### Route Configuration
 
-#### Key Changes in Next.js 16
+All routes use ISR with appropriate revalidation times and cache tags for efficient invalidation.
 
-- Turbopack is now stable and default (was experimental in v15)
-- New cache system with explicit `use cache` directive
-- `cacheComponents` flag for new caching features
-- Improved performance and build times
+## Available Scripts
 
-### Project Structure
-
-```
-nextjs-v16-upstream/
-├── app/
-│   ├── favicon.ico          # App favicon
-│   ├── globals.css          # Global styles with Tailwind
-│   ├── layout.tsx           # Root layout
-│   └── page.tsx             # Home page
-├── public/                  # Static SVG assets
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
-├── .gitignore               # Git ignore file
-├── cacheHandler.ts          # Legacy cache handler (ISR, route handlers, fetch)
-├── eslint.config.mjs        # ESLint configuration
-├── LICENSE                  # MIT License
-├── next-env.d.ts            # Next.js TypeScript declarations
-├── next.config.ts           # Next.js configuration with dual cache handlers
-├── package.json             # Dependencies
-├── postcss.config.mjs       # PostCSS configuration for Tailwind
-├── README.md                # This file
-├── tsconfig.json            # TypeScript configuration
-└── use-cache-handler.ts     # Next.js 16 'use cache' directive handler
+```bash
+npm run dev      # Start development server
+npm run build    # Build for production
+npm run start    # Start production server
+npm run lint     # Run ESLint
 ```
 
-### Additional Resources
+## Debugging
 
-- [Next.js 16 Release Notes](https://nextjs.org/blog/next-16)
-- [Pantheon Cache Handler](https://github.com/pantheon-systems/nextjs-cache-handler)
-- [Turbopack Documentation](https://nextjs.org/docs/app/api-reference/turbopack)
+### Cache Debugging
 
-### Support
+Enable cache handler debug logging:
 
-For issues related to:
-- **Next.js:** [Next.js GitHub](https://github.com/vercel/next.js)
-- **Pantheon Cache Handler:** [pantheon-systems/nextjs-cache-handler](https://github.com/pantheon-systems/nextjs-cache-handler)
-- **Pantheon Platform:** [Pantheon Documentation](https://docs.pantheon.io)
+```bash
+CACHE_DEBUG=true npm run dev
+```
+
+This shows detailed logs for cache operations (GET, SET, HIT, MISS, revalidation).
+
+### GraphQL Debugging
+
+Check `next.config.ts` logging configuration:
+
+```typescript
+logging: {
+  fetches: {
+    fullUrl: true,
+  },
+}
+```
+
+## Future Enhancements
+
+This architecture is ready for:
+
+- **Advanced Custom Fields (ACF)** - Types and fragments prepared
+- **Custom Post Types** - Easily extend queries and types
+- **Flexible Content Blocks** - ACF flexible content support
+- **Pagination** - Blog listing pagination
+- **Search Functionality** - WPGraphQL search queries
+- **Authentication** - Preview mode for draft content
+
+## Pantheon-Specific Notes
+
+### Current Limitations
+
+- Next.js support is in **Private Beta**
+- HTTP Streaming not yet available
+- New Relic integration pending
+- Secrets Manager required for environment variables
+
+### Best Practices
+
+- Use only npm (single lock file)
+- Set Node.js version in `package.json` engines
+- Configure images with WordPress remote patterns
+- Use tag-based revalidation for efficiency
+
+## Support
+
+For WordPress backend configuration, see [WORDPRESS_REQUIREMENTS.md](./WORDPRESS_REQUIREMENTS.md)
+
+For Pantheon Next.js documentation:
+- [Next.js Overview](https://docs.pantheon.io/nextjs)
+- [Limitations and Considerations](https://docs.pantheon.io/nextjs/considerations)
+
+## License
+
+MIT
