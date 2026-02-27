@@ -9,8 +9,7 @@ const nextConfig = {
   output: 'standalone',
 
   // Enable 'use cache' directive for Next.js 16
-  // Set to false for local builds without WordPress access
-  cacheComponents: process.env.WORDPRESS_API_URL ? true : false,
+  cacheComponents: true,
 
   // Legacy cache handler for ISR, route handlers, and fetch cache
   cacheHandler: path.resolve(__dirname, './cache-handler.mjs'),
