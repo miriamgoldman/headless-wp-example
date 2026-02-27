@@ -1,20 +1,18 @@
-# WordPress Headless with Next.js 15
+# WordPress Headless with Next.js 16
 
-A modern headless WordPress application built with Next.js 15, WPGraphQL, and optimized for Pantheon hosting.
+A headless WordPress application built with Next.js 16, the WordPress REST API, and optimized for Pantheon hosting.
 
 ## Features
 
-- **Next.js 15** with App Router and React Server Components
-- **Incremental Static Regeneration (ISR)** with shared cache via `@pantheon-systems/nextjs-cache-handler`
-- **Tag-Based Cache Invalidation** for efficient content updates
+- **Next.js 16** with App Router, React Server Components, and `'use cache'` directive
+- **Tag-Based Cache Invalidation** via surrogate keys for instant content updates
 - **On-Demand Revalidation** via WordPress webhooks
+- **Dual Cache Handlers** for legacy fetch cache and Next.js 16 `'use cache'`
 - **TypeScript** for type safety
 - **Tailwind CSS** for styling
 - **Optimized for Pantheon** hosting platform
 
 ## Architecture
-
-### Next.js Application
 
 ```
 /app
@@ -26,16 +24,15 @@ A modern headless WordPress application built with Next.js 15, WPGraphQL, and op
   /wordpress          - WordPress-specific components
 
 /lib/wordpress
-  /client.ts          - GraphQL client with tag support
-  /queries.ts         - WordPress data queries
-  /types.ts           - TypeScript types
-  /fragments.ts       - Reusable GraphQL fragments
+  /client.ts          - REST API client with cache tag support
+  /queries.ts         - WordPress data queries with 'use cache'
+  /types.ts           - TypeScript types for REST API responses
 ```
 
 ## Prerequisites
 
 - Node.js 20+ (specified in `package.json` engines field)
-- WordPress backend with WPGraphQL installed
+- WordPress backend with the REST API enabled (default in WordPress 4.7+)
 - Pantheon account for deployment
 
 ## Local Development Setup
@@ -43,10 +40,7 @@ A modern headless WordPress application built with Next.js 15, WPGraphQL, and op
 ### 1. Clone and Install
 
 ```bash
-# Install dependencies
 npm install
-
-# Copy environment variables
 cp .env.local.example .env.local
 ```
 
@@ -55,7 +49,7 @@ cp .env.local.example .env.local
 Edit `.env.local`:
 
 ```bash
-WORDPRESS_API_URL=https://your-wp-site.pantheonsite.io/graphql
+WORDPRESS_API_URL=https://your-wp-site.pantheonsite.io/wp-json/wp/v2
 WORDPRESS_REVALIDATE_SECRET=your-secure-random-string
 ```
 
@@ -69,14 +63,15 @@ Visit `http://localhost:3000`
 
 ## WordPress Backend Setup
 
-See [WORDPRESS_REQUIREMENTS.md](./WORDPRESS_REQUIREMENTS.md) for complete WordPress configuration instructions.
+The WordPress REST API is enabled by default. Ensure your WordPress site has:
 
-### Required WordPress Plugins
+- **Permalink structure** set to anything other than "Plain" (required for REST API routing)
+- **Posts or pages** published for the frontend to display
 
-1. **WPGraphQL** - Core GraphQL API
-2. **WPGraphQL CORS** - Cross-origin request handling
-3. **WPGraphQL for ACF** - Future ACF support (optional)
-4. **Headless Mode** - Disable WP front-end (recommended)
+### Optional WordPress Plugins
+
+- **Headless Mode** - Disables the WordPress frontend theme (recommended)
+- **Pantheon Advanced Page Cache** - Enables surrogate key purging for on-demand revalidation
 
 ## Pantheon Deployment
 
@@ -92,9 +87,9 @@ terminus self:plugin:install terminus-secrets-manager-plugin
 terminus secret:site:set <site-name> WORDPRESS_REVALIDATE_SECRET "your-secret"
 
 # Set environment-specific WordPress URLs
-terminus secret:env:set <site-name>.dev WORDPRESS_API_URL "https://dev-wp.pantheonsite.io/graphql"
-terminus secret:env:set <site-name>.test WORDPRESS_API_URL "https://test-wp.pantheonsite.io/graphql"
-terminus secret:env:set <site-name>.live WORDPRESS_API_URL "https://live-wp.pantheonsite.io/graphql"
+terminus secret:env:set <site-name>.dev WORDPRESS_API_URL "https://dev-wp.pantheonsite.io/wp-json/wp/v2"
+terminus secret:env:set <site-name>.test WORDPRESS_API_URL "https://test-wp.pantheonsite.io/wp-json/wp/v2"
+terminus secret:env:set <site-name>.live WORDPRESS_API_URL "https://live-wp.pantheonsite.io/wp-json/wp/v2"
 ```
 
 ### Automatic Variables
@@ -115,28 +110,47 @@ Pantheon automatically:
 
 ## Cache Strategy
 
-### Cache Handler
+### Cache Handlers
 
-This project uses `@pantheon-systems/nextjs-cache-handler` which provides:
+This project uses `@pantheon-systems/nextjs-cache-handler` and configures two cache handler paths in `next.config.mjs`:
 
-- **Dual Cache Support**: GCS in production, file-based locally
-- **Tag-Based Invalidation**: O(1) cache clearing by tag
+- **`cache-handler.mjs`** - Legacy cache handler for fetch cache and route handlers
+- **`use-cache-handler.mjs`** - Next.js 16 cache handler for the `'use cache'` directive
+
+Both provide:
+- **Dual Storage**: GCS in production, file-based locally
+- **Tag-Based Invalidation**: O(1) cache clearing by surrogate key
 - **Build-Aware Caching**: Auto-invalidates on new builds
-- **Buffer Serialization**: Next.js 15 compatibility
 
-### Revalidation Times
+### Caching Approach
 
-- **Homepage**: 1 hour (3600s)
-- **Blog Listing**: 30 minutes (1800s)
-- **Blog Posts**: 1 hour (3600s)
-- **Pages**: 2 hours (7200s)
+All data-fetching functions use the `'use cache'` directive with infinite cache lifetime:
+
+```typescript
+export async function getPostBySlug(slug: string) {
+  'use cache';
+  cacheLife({ stale: Infinity, revalidate: Infinity, expire: Infinity });
+  // ...
+  surrogateKeys.forEach((key) => cacheTag(key));
+}
+```
+
+Content stays cached until explicitly invalidated via surrogate key purging from WordPress webhooks. There is no time-based revalidation.
 
 ### On-Demand Revalidation
 
-WordPress can trigger revalidation via webhook:
+WordPress triggers revalidation via the `/api/revalidate` endpoint. The endpoint supports multiple payload formats:
 
+**Surrogate keys (recommended):**
 ```bash
-curl -X POST https://your-nextjs-site.com/api/revalidate?secret=YOUR_SECRET \
+curl -X POST https://your-nextjs-site.com/api/revalidate \
+  -H "Content-Type: application/json" \
+  -d '{"secret": "YOUR_SECRET", "surrogate_keys": ["post-123", "post-my-post", "post-list"]}'
+```
+
+**Single path or tag (legacy):**
+```bash
+curl -X POST "https://your-nextjs-site.com/api/revalidate?secret=YOUR_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"path": "/blog/my-post", "tag": "posts"}'
 ```
@@ -145,23 +159,20 @@ curl -X POST https://your-nextjs-site.com/api/revalidate?secret=YOUR_SECRET \
 
 ### Key Files
 
-- `cacheHandler.ts` - Cache handler configuration
-- `next.config.ts` - Next.js configuration with cache handler and image optimization
+- `next.config.mjs` - Next.js configuration with cache handlers and image optimization
+- `cache-handler.mjs` - Legacy cache handler configuration
+- `use-cache-handler.mjs` - Next.js 16 `'use cache'` handler configuration
 - `app/layout.tsx` - Root layout with site-wide navigation
-- `lib/wordpress/client.ts` - GraphQL client with tag support
-- `lib/wordpress/queries.ts` - All WordPress data queries
+- `lib/wordpress/client.ts` - REST API client with cache tag support
+- `lib/wordpress/queries.ts` - All WordPress data queries with `'use cache'`
 - `components/wordpress/` - Reusable WordPress components
-
-### Route Configuration
-
-All routes use ISR with appropriate revalidation times and cache tags for efficient invalidation.
 
 ## Available Scripts
 
 ```bash
 npm run dev      # Start development server
 npm run build    # Build for production
-npm run start    # Start production server
+npm run start    # Start production server (standalone)
 npm run lint     # Run ESLint
 ```
 
@@ -177,9 +188,9 @@ CACHE_DEBUG=true npm run dev
 
 This shows detailed logs for cache operations (GET, SET, HIT, MISS, revalidation).
 
-### GraphQL Debugging
+### Fetch Debugging
 
-Check `next.config.ts` logging configuration:
+`next.config.mjs` includes fetch logging:
 
 ```typescript
 logging: {
@@ -191,14 +202,10 @@ logging: {
 
 ## Future Enhancements
 
-This architecture is ready for:
-
-- **Advanced Custom Fields (ACF)** - Types and fragments prepared
-- **Custom Post Types** - Easily extend queries and types
-- **Flexible Content Blocks** - ACF flexible content support
+- **Custom Post Types** - Extend queries and types
 - **Pagination** - Blog listing pagination
-- **Search Functionality** - WPGraphQL search queries
-- **Authentication** - Preview mode for draft content
+- **Search** - WordPress REST API search queries
+- **Preview Mode** - Draft content preview with authentication
 
 ## Pantheon-Specific Notes
 
@@ -217,8 +224,6 @@ This architecture is ready for:
 - Use tag-based revalidation for efficiency
 
 ## Support
-
-For WordPress backend configuration, see [WORDPRESS_REQUIREMENTS.md](./WORDPRESS_REQUIREMENTS.md)
 
 For Pantheon Next.js documentation:
 - [Next.js Overview](https://docs.pantheon.io/nextjs)

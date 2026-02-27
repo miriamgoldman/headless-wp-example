@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   // Validate origin header (optional security enhancement)
   const origin = request.headers.get('origin') || request.headers.get('referer');
   if (origin && process.env.WORDPRESS_API_URL) {
-    const allowedOrigin = process.env.WORDPRESS_API_URL.replace('/graphql', '');
+    const allowedOrigin = new URL(process.env.WORDPRESS_API_URL).origin;
     if (!origin.startsWith(allowedOrigin)) {
       console.warn(`[Revalidate] Rejected request from unauthorized origin: ${origin}`);
     }
