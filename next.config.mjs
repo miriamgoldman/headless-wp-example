@@ -16,7 +16,6 @@ const nextConfig = {
 
   // Next.js 16 cache handlers for 'use cache' directive
   cacheHandlers: {
-    default: path.resolve(__dirname, './use-cache-handler.mjs'),
     remote: path.resolve(__dirname, './use-cache-handler.mjs'),
   },
 

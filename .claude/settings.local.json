@@ -4,7 +4,9 @@
       "Bash(ls:*)",
       "Bash(npm install:*)",
       "Bash(npx next build:*)",
-      "WebFetch(domain:live-headless-wp-example.pantheonsite.io)"
+      "WebFetch(domain:live-headless-wp-example.pantheonsite.io)",
+      "Bash(gh api:*)",
+      "Bash(python3:*)"
     ]
   }
 }

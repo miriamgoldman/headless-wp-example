@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
       const results = [];
       for (const key of surrogate_keys) {
         try {
-          revalidateTag(key, 'max');
+          revalidateTag(key, { expire: 0 });
           results.push({ key, status: 'success' });
         } catch (error) {
           results.push({ key, status: 'error', message: String(error) });
