@@ -1,6 +1,19 @@
 import { Post, Page } from '@/lib/wordpress/types';
 import FeaturedImage from './FeaturedImage';
 
+function rewriteContentUrls(html: string): string {
+  const wpApiUrl = process.env.WORDPRESS_API_URL;
+  if (!wpApiUrl) return html;
+
+  const wpOrigin = wpApiUrl.replace(/\/wp-json\/wp\/v2\/?$/, '');
+  const escaped = wpOrigin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return html.replace(
+    new RegExp(`href="${escaped}(/[^"]*)"`, 'g'),
+    'href="$1"'
+  );
+}
+
 interface PageContentProps {
   content: Post | Page;
   showMeta?: boolean;
@@ -51,7 +64,7 @@ export default function PageContent({ content, showMeta = true }: PageContentPro
         />
       )}
 
-      <div className="wp-content" dangerouslySetInnerHTML={{ __html: content.content }} />
+      <div className="wp-content" dangerouslySetInnerHTML={{ __html: rewriteContentUrls(content.content) }} />
 
       {isPost && content.tags && content.tags.nodes.length > 0 && (
         <footer className="mt-12 pt-8 border-t border-gray-200">

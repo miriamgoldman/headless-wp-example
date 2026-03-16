@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
-import { getAllPageSlugs, getPageBySlug } from '@/lib/wordpress/queries';
+import { notFound, redirect } from 'next/navigation';
+import { getAllPageSlugs, getPageBySlug, getPostBySlug } from '@/lib/wordpress/queries';
 import PageContent from '@/components/wordpress/PageContent';
 
 interface PageProps {
@@ -60,6 +60,10 @@ export default async function Page({ params }: PageProps) {
   const page = await getPageBySlug(pageSlug);
 
   if (!page) {
+    const post = await getPostBySlug(pageSlug);
+    if (post) {
+      redirect(`/blog/${pageSlug}`);
+    }
     notFound();
   }
 
