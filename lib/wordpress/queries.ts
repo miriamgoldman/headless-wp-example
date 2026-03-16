@@ -332,7 +332,9 @@ export async function getFrontPage(): Promise<Page | null> {
   cacheLife({ stale: Infinity, revalidate: Infinity, expire: Infinity });
 
   try {
+    console.log('[getFrontPage] use-cache function EXECUTING at', new Date().toISOString());
     const { page, surrogateKeys } = await fetchFrontPageData();
+    console.log('[getFrontPage] Fetched page:', page?.title, '| Keys:', surrogateKeys.join(', '));
     surrogateKeys.forEach((key) => cacheTag(key));
     return page;
   } catch (error) {
