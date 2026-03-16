@@ -232,3 +232,4 @@ For Pantheon Next.js documentation:
 ## License
 
 MIT
+
