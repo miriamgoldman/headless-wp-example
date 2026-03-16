@@ -276,9 +276,70 @@ async function fetchSiteSettingsData(): Promise<{
   }
 }
 
+async function discoverFrontPageId(): Promise<number | null> {
+  if (!process.env.WORDPRESS_API_URL) {
+    return null;
+  }
+
+  // Derive WordPress home URL from REST API URL
+  const wpHomeUrl = process.env.WORDPRESS_API_URL.replace(/\/wp-json\/wp\/v2\/?$/, '/');
+
+  try {
+    const response = await fetch(wpHomeUrl);
+    const linkHeader = response.headers.get('link');
+
+    if (!linkHeader) {
+      return null;
+    }
+
+    // WordPress sets: <.../wp-json/wp/v2/pages/ID>; rel="alternate"; type="application/json"
+    const match = linkHeader.match(/<[^>]*\/wp\/v2\/pages\/(\d+)[^>]*>;\s*rel="alternate"/);
+    return match ? parseInt(match[1], 10) : null;
+  } catch (error) {
+    console.warn('[discoverFrontPageId] Unable to discover front page:', error);
+    return null;
+  }
+}
+
+async function fetchFrontPageData(): Promise<{ page: Page | null; surrogateKeys: string[] }> {
+  const pageId = await discoverFrontPageId();
+
+  if (!pageId) {
+    return { page: null, surrogateKeys: [] };
+  }
+
+  const pages = await fetchFromWordPress<RestPage[]>(
+    `/pages?_embed&include=${pageId}&status=publish`,
+    { tags: [`page-${pageId}`, 'front-page'] }
+  );
+
+  if (!pages || pages.length === 0) {
+    return { page: null, surrogateKeys: [`page-${pageId}`] };
+  }
+
+  const page = transformPage(pages[0]);
+  const surrogateKeys = [...generatePageSurrogateKeys(page), 'front-page'];
+
+  return { page, surrogateKeys };
+}
+
 // ============================================================================
 // CACHED WRAPPER FUNCTIONS WITH 'use cache'
 // ============================================================================
+
+export async function getFrontPage(): Promise<Page | null> {
+  'use cache';
+  cacheLife({ stale: Infinity, revalidate: Infinity, expire: Infinity });
+
+  try {
+    const { page, surrogateKeys } = await fetchFrontPageData();
+    surrogateKeys.forEach((key) => cacheTag(key));
+    return page;
+  } catch (error) {
+    console.warn('Unable to fetch front page:', error);
+    return null;
+  }
+}
 
 export async function getAllPostSlugs(): Promise<string[]> {
   'use cache';
