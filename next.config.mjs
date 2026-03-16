@@ -45,20 +45,6 @@ const nextConfig = {
     },
   },
 
-  // CDN cache control - long TTL with surrogate key purging for freshness
-  async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 's-maxage=604800, stale-while-revalidate=86400',
-          },
-        ],
-      },
-    ];
-  },
 };
 
 export default nextConfig;
