@@ -285,7 +285,7 @@ async function discoverFrontPageId(): Promise<number | null> {
   const wpHomeUrl = process.env.WORDPRESS_API_URL.replace(/\/wp-json\/wp\/v2\/?$/, '/');
 
   try {
-    const response = await fetch(wpHomeUrl);
+    const response = await fetch(wpHomeUrl, { cache: 'no-store' });
     const linkHeader = response.headers.get('link');
 
     if (!linkHeader) {
