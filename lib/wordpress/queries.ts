@@ -329,7 +329,12 @@ async function fetchFrontPageData(): Promise<{ page: Page | null; surrogateKeys:
 
 export async function getFrontPage(): Promise<Page | null> {
   'use cache';
-  cacheLife({ stale: Infinity, revalidate: Infinity, expire: Infinity });
+  // stale: 0 forces Next.js to wait for a fresh render instead of serving
+  // stale-while-revalidate. This is needed because the cache handler's route
+  // cache entry for /index isn't properly tagged in the tagsMapping, so it
+  // can't be deleted during tag revalidation. Without deletion, the stale
+  // entry persists and stale: Infinity would always serve it.
+  cacheLife({ stale: 0, revalidate: Infinity, expire: Infinity });
 
   try {
     console.log('[getFrontPage] use-cache function EXECUTING at', new Date().toISOString());
