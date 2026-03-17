@@ -6,7 +6,8 @@
       "Bash(npx next build:*)",
       "WebFetch(domain:live-headless-wp-example.pantheonsite.io)",
       "Bash(gh api:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "mcp__plugin_claude-mem_mem-search__get_observations"
     ]
   }
 }
