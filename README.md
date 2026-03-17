@@ -207,6 +207,21 @@ logging: {
 - **Search** - WordPress REST API search queries
 - **Preview Mode** - Draft content preview with authentication
 
+## Known Issues
+
+### Homepage Cache Invalidation Workaround
+
+Tag-based cache revalidation works for all routes except the homepage (`/`). The cache handler internally uses `/index` as the cache key for the homepage, which creates two problems:
+
+1. The ISR route cache entry for `/index` is not associated with homepage tags in the cache handler's `tagsMapping`, so `revalidateTag()` never finds or deletes it. The stale entry persists and is served via stale-while-revalidate.
+2. The cache handler clears the edge cache for `/index`, but the CDN stores the homepage under `/`.
+
+The Drupal headless example avoids this because Drupal's Next module sends both explicit paths and tags in its webhook (`invalidation: { paths: ["/"], tags: [...] }`), which hits a different code path in the revalidation handler. WordPress's MU plugin sends only surrogate keys.
+
+**Workaround** (`app/api/revalidate/route.ts`): When `front-page` is present in the surrogate keys, the handler directly deletes the GCS route cache object (`route-cache/_index.json`) and clears the edge cache for `/` via the outbound proxy. This forces a full fresh render on the next request. The workaround requires `CACHE_BUCKET` and the GCP metadata server, both provided automatically on Pantheon. It is skipped in local development where these are absent.
+
+All other routes rely on standard tag-based revalidation with no workarounds.
+
 ## Pantheon-Specific Notes
 
 ### Current Limitations

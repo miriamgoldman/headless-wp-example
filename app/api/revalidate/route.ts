@@ -98,6 +98,53 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Homepage cache workaround. The cache handler's tagsMapping never
+      // associates the /index route cache entry with homepage tags, so
+      // revalidateTag() never deletes it. Delete it from GCS directly,
+      // then clear the edge cache for / (CDN stores homepage under /,
+      // not /index).
+      if (surrogate_keys.includes('front-page')) {
+        revalidatePath('/');
+
+        // Delete route cache entry from GCS so Next.js does a fresh render
+        // instead of serving stale content via SWR.
+        const bucket = process.env.CACHE_BUCKET;
+        if (bucket) {
+          try {
+            const tokenResp = await fetch(
+              'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+              { headers: { 'Metadata-Flavor': 'Google' }, cache: 'no-store' }
+            );
+            const { access_token } = await tokenResp.json();
+            const object = encodeURIComponent('route-cache/_index.json');
+            const gcsResp = await fetch(
+              `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${object}`,
+              {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${access_token}` },
+              }
+            );
+            console.log(`[Revalidate] GCS route cache /index deleted: HTTP ${gcsResp.status}`);
+          } catch (e) {
+            console.warn('[Revalidate] GCS route cache /index delete failed:', e);
+          }
+        }
+
+        // Clear edge cache for / (CDN stores homepage under /, not /index).
+        if (process.env.OUTBOUND_PROXY_ENDPOINT) {
+          try {
+            const edgeUrl = `http://${process.env.OUTBOUND_PROXY_ENDPOINT}/rest/v0alpha1/cache/paths/%252F`;
+            const edgeResp = await fetch(edgeUrl, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            console.log(`[Revalidate] Edge cache cleared for /: HTTP ${edgeResp.status}`);
+          } catch (e) {
+            console.warn('[Revalidate] Edge cache clear for / failed:', e);
+          }
+        }
+      }
+
       console.log(`[Revalidate] Revalidated ${surrogate_keys.length} tags from WordPress webhook`);
 
       return NextResponse.json({
