@@ -140,24 +140,6 @@ export async function POST(request: NextRequest) {
           results.paths.push(p);
           console.log(`[Revalidate] Path revalidated: ${p}`);
         }
-
-        // Workaround: the cache handler can't clear "/" from edge cache
-        // because it produces an empty path segment → HTTP 400.
-        // Manually call the outbound proxy with an encoded slash.
-        if (paths.includes('/')) {
-          const proxyEndpoint = process.env.OUTBOUND_PROXY_ENDPOINT;
-          if (proxyEndpoint) {
-            try {
-              const resp = await fetch(
-                `http://${proxyEndpoint}/rest/v0alpha1/cache/paths/%2F`,
-                { method: 'DELETE', headers: { 'Content-Type': 'application/json' } }
-              );
-              console.log(`[Revalidate] Manual root path edge clear: HTTP ${resp.status}`);
-            } catch (e) {
-              console.warn(`[Revalidate] Manual root path edge clear failed:`, e);
-            }
-          }
-        }
       }
 
       console.log(`[Revalidate] Webhook received at ${new Date().toISOString()}`);
