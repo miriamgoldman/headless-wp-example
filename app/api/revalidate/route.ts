@@ -98,15 +98,21 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // If homepage tags are present, also revalidate the root path.
-      // revalidatePath('/') clears edge cache for both '/' and '/index',
-      // working around the cacheKeyToRoutePath bug where onRouteCacheSet('/index')
-      // only clears '/index' but the CDN caches the homepage under '/'.
-      // This must happen in the SAME request as tag revalidation to avoid
-      // a race condition where edge is cleared before use-cache entries expire.
-      if (surrogate_keys.includes('front-page')) {
+      // Clear edge cache for homepage. The cache handler has a bug where
+      // onRouteCacheSet('/index') clears '/index' from edge but the CDN
+      // stores the homepage under '/'. Directly clear '/' via the proxy.
+      if (surrogate_keys.includes('front-page') && process.env.OUTBOUND_PROXY_ENDPOINT) {
         revalidatePath('/');
-        console.log('[Revalidate] Also revalidated path / for homepage');
+        try {
+          const edgeUrl = `http://${process.env.OUTBOUND_PROXY_ENDPOINT}/rest/v0alpha1/cache/paths/%252F`;
+          const edgeResp = await fetch(edgeUrl, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          console.log(`[Revalidate] Edge cache cleared for /: HTTP ${edgeResp.status}`);
+        } catch (e) {
+          console.warn('[Revalidate] Edge cache clear for / failed:', e);
+        }
       }
 
       console.log(`[Revalidate] Revalidated ${surrogate_keys.length} tags from WordPress webhook`);
