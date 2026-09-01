@@ -226,7 +226,6 @@ All other routes rely on standard tag-based revalidation with no workarounds.
 
 ### Current Limitations
 
-- HTTP Streaming not yet available
 - New Relic integration pending
 - Secrets Manager required for environment variables
 
